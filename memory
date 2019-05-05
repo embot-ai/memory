@@ -1,0 +1,123 @@
+#!/usr/bin/env bash
+
+PORT=9999
+BASEDIR=`pwd`
+ACTION=""
+#echo $BASEDIR
+
+if [ ! -e "memory.pl" ]; then
+	echo "Not in base directory"
+	exit
+fi
+
+function start_memory() {
+	if [ -e "$BASEDIR/pid-$PORT.txt" ]; then
+		PID=`cat "$BASEDIR/pid-$PORT.txt" | tr -d "\n"`
+		CHECK_PID=`ps auxww | awk '{print $2}' | grep -w $PID | sort -r | tr -d ' '`
+		if [ "$CHECK_PID" != "" ]; then
+			echo "ERROR: A memory process is already running on port $PORT."
+			exit 1
+		else
+			echo "WARN: Unknown process $PID in pid-$PORT.txt file."
+		#	exit 1
+		fi
+	fi
+
+	if lsof -Pi :$PORT -sTCP:LISTEN -t >/dev/null ; then
+		echo "ERROR: A process is already running on port $PORT."
+		exit 1
+	fi
+
+	CMD="perl $BASEDIR/memory.pl -p$PORT"
+	#echo $CMD;
+
+	$CMD >/dev/null 2>&1 & echo $! > "$BASEDIR/pid-$PORT.txt"
+
+	PID=`cat "$BASEDIR/pid-$PORT.txt" | tr -d "\n"`
+	echo "Started memory on port $PORT (pid=$PID)"
+}
+
+function stop_memory() {
+	if [ -e "$BASEDIR/pid-$PORT.txt" ]; then
+		PID=`cat "$BASEDIR/pid-$PORT.txt" | tr -d "\n"`
+		rm -f "$BASEDIR/pid-$PORT.txt"
+		# check if pid is running
+		CHECK_PID=`ps auxww | awk '{print $2}' | grep -w $PID | sort -r | tr -d ' '`
+		if [ "$CHECK_PID" != "" ]; then
+			echo "Killing previous memory process (pid:$PID)"
+			kill "$PID"
+			sleep 1
+		fi
+
+		CHECK_PID=`ps auxww | awk '{print $2}' | grep -w $PID | sort -r | tr -d ' '`
+		if [ "$CHECK_PID" != "" ]; then
+			echo "ERROR: Failed to kill previous process $PID ... script fails."
+			exit 1
+		fi
+	else
+		echo "Killing previous process ... Not running."
+	fi
+}
+
+function print_usage() {
+	echo "Copyright (c) 2017 - 2019 Embot B.V."
+	echo ""
+	echo "Usage: ./memory -p PORT COMMAND"
+	echo "    where COMMAND is one of: start, stop, clean"
+	echo ""
+	echo "  start: Start memory service on port PORT"
+	echo "  stop:  Stop memory service on port PORT"
+	echo "  clean: Stop memory service on port PORT and delete dump"
+	echo ""
+}
+
+if [ $# -gt 0 ]; then
+	while true; do
+      case "$1" in
+		-p|-port)
+			PORT=$2
+			shift 2
+		;;
+		stop)
+			ACTION="stop"
+			shift
+		;;
+		start)
+			ACTION="start"
+			shift
+		;;
+		clean)
+			ACTION="clean"
+			shift
+		;;
+		*)
+			#echo "breaked"
+			break
+		;;
+      esac
+    done
+else
+	print_usage
+	exit
+fi
+
+#echo $PORT
+#exit
+
+if [ "$ACTION" == "stop" ]; then
+	stop_memory
+	exit
+fi
+
+if [ "$ACTION" == "start" ]; then
+	start_memory
+	exit
+fi
+
+if [ "$ACTION" == "clean" ]; then
+	stop_memory
+	rm -f /tmp/embot_memory.txt
+	exit
+fi
+
+print_usage
